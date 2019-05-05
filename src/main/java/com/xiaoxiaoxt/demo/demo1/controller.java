@@ -35,6 +35,8 @@ public class controller {
     String isVedioCmd;
     @Value("${file.transformType.cmd}")
     String transformTypeCmd;
+    boolean mismatching=false;
+
 
     @RequestMapping("/")
     public String index(){
@@ -45,7 +47,8 @@ public class controller {
     @ResponseBody
     public String upload(@RequestParam("fileName") MultipartFile file,
                          HttpServletRequest request,@RequestParam("type") String type) throws IOException {
-        File desfile=null;//接受文件绝对地址
+        //接受文件绝对地址
+        File desfile=null;
         String fileName=null;
         String newfileName=null;
         if (!file.isEmpty()){
@@ -56,6 +59,9 @@ public class controller {
                 file.transferTo(desfile);
                 //判断目标文件是否为视频文件
                 if(isVedio(uploadPath+fileName)){
+                    if(!fileName.endsWith(".mp4")&&!fileName.endsWith(".mov")&&!fileName.endsWith(".m4a")){
+                        mismatching=true;
+                    }
                     if(!fileName.endsWith(type)){
                         int index = fileName.lastIndexOf(".");
                         String prefix = fileName.substring(0, index);
@@ -67,9 +73,8 @@ public class controller {
                     new Thread(new Runnable() {
                         @Override
                         public void run(){
-
-                            //转换格式
                             try {
+                                //转换格式
                                 transformType(uploadPath,tFileName,type);
                                 //删除原格式文件
                                 cutVedio(transformTypePath,tNewfileName);
@@ -81,7 +86,10 @@ public class controller {
                             }
                         }
                     }).start();
-
+                    if(mismatching){
+                        mismatching=false;
+                        return "上传成功</br>文件的后缀名不对，请修改成mp4格式";
+                    }
                     return "上传成功";
                 }else{
                     desfile.delete();
@@ -96,10 +104,12 @@ public class controller {
     }
     //判断是否为视频文件
     private boolean isVedio(String fileFullPath)throws IOException{
-        isVedioCmd=isVedioCmd.replace("oldPath",fileFullPath);
+        boolean isVedio=false;
+        String realIsVedioCmd=isVedioCmd.replace("oldPath",fileFullPath);
+        Process process=null;
         Runtime run = Runtime.getRuntime();
         try {
-            Process process = run.exec(isVedioCmd);
+            process = run.exec(realIsVedioCmd);
             BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String line = null;
             StringBuilder sb = new StringBuilder();
@@ -113,14 +123,20 @@ public class controller {
             if(subJson.contains("mov")||subJson.contains("mp4")
                     ||subJson.contains("m4a")||subJson.contains("3pg")
                     ||subJson.contains("3g2")||subJson.contains("mj2")){
-                return true;
-            }else {
-                return false;
+                isVedio=true;
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return false;
+        if(process!=null){
+            dealStream(process);
+            try {
+                process.waitFor();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        return isVedio;
     }
 
     /**
@@ -142,8 +158,8 @@ public class controller {
         int index = fileName.lastIndexOf(".");
         String prefix = fileName.substring(0, index);
         String newfileName=prefix+"."+type;
-        transformTypeCmd=transformTypeCmd.replace("oldPath",filePath+fileName).replace("newPath",transformTypePath+newfileName);
-        Process process = Runtime.getRuntime().exec(transformTypeCmd);
+        String realTransformTypeCmd=transformTypeCmd.replace("oldPath",filePath+fileName).replace("newPath",transformTypePath+newfileName);
+        Process process = Runtime.getRuntime().exec(realTransformTypeCmd);
         dealStream(process);
         try {
             process.waitFor();
@@ -153,11 +169,11 @@ public class controller {
     }
     //截取图片,第2秒钟的图片
     private void cutImg(String filePath,String fileName) throws IOException {
-        cutImgCmd=cutImgCmd.replace("oldPath",filePath+fileName);
+        String realCutImgCmd=cutImgCmd.replace("oldPath",filePath+fileName);
         int index = fileName.lastIndexOf(".");
         fileName = fileName.substring(0, index)+".jpg";
-        cutImgCmd=cutImgCmd.replace("newPath",imgPath+fileName);
-        Process process = Runtime.getRuntime().exec(cutImgCmd);
+        realCutImgCmd=realCutImgCmd.replace("newPath",imgPath+fileName);
+        Process process = Runtime.getRuntime().exec(realCutImgCmd);
         dealStream(process);
         try {
             process.waitFor();
@@ -168,8 +184,8 @@ public class controller {
 
     //截取视频，2秒
     private void cutVedio(String filePath,String fileName) throws IOException {
-        cutVedioCmd=cutVedioCmd.replace("oldPath",filePath+fileName).replace("newPath",vedioPath+fileName);
-        Process process = Runtime.getRuntime().exec(cutVedioCmd);
+        String realCutVedioCmd=cutVedioCmd.replace("oldPath",filePath+fileName).replace("newPath",vedioPath+fileName);
+        Process process = Runtime.getRuntime().exec(realCutVedioCmd);
         InputStream in = process.getInputStream();
         dealStream(process);
         try {
@@ -181,8 +197,8 @@ public class controller {
 
     //加log
     private void addLog(String filePath,String fileName) throws IOException {
-        addLogCmd=addLogCmd.replace("oldPath",filePath+fileName).replace("picAddr",picAddr).replace("newPath",logPath+fileName);
-        Process process = Runtime.getRuntime().exec(addLogCmd);
+        String realAddLogCmd=addLogCmd.replace("oldPath",filePath+fileName).replace("picAddr",picAddr).replace("newPath",logPath+fileName);
+        Process process = Runtime.getRuntime().exec(realAddLogCmd);
         dealStream(process);
         try {
             process.waitFor();
