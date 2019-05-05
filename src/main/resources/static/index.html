@@ -7,6 +7,13 @@
 <body>
     <form action="/upload" enctype="multipart/form-data" method="POST">
         <input type="file" name="fileName"/><br/><br/>
+        请选择您要存储的视频格式：
+        <select name="type">
+            <option value ="mov">mov</option>
+            <option value ="mp4">mp4</option>
+            <option value="m4a">m4a</option>
+        </select>
+        <br/><br/>
         <input type="submit" value="提交"/>
     </form>
 </body>

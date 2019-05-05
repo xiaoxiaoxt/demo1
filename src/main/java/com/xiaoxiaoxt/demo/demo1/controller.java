@@ -13,6 +13,8 @@ import java.io.*;
 
 @Controller
 public class controller {
+    @Value("${file.transformTypePath}")
+    String transformTypePath;
     @Value("${file.uploadPath}")
     String uploadPath;
     @Value("${file.imgPath}")
@@ -31,6 +33,8 @@ public class controller {
     String addLogCmd;
     @Value("${file.isVedio.cmd}")
     String isVedioCmd;
+    @Value("${file.transformType.cmd}")
+    String transformTypeCmd;
 
     @RequestMapping("/")
     public String index(){
@@ -39,9 +43,11 @@ public class controller {
 
     @PostMapping("/upload")
     @ResponseBody
-    public String upload(@RequestParam("fileName") MultipartFile file, HttpServletRequest request) throws IOException {
+    public String upload(@RequestParam("fileName") MultipartFile file,
+                         HttpServletRequest request,@RequestParam("type") String type) throws IOException {
         File desfile=null;//接受文件绝对地址
         String fileName=null;
+        String newfileName=null;
         if (!file.isEmpty()){
             try {
                 fileName=file.getOriginalFilename();
@@ -50,9 +56,32 @@ public class controller {
                 file.transferTo(desfile);
                 //判断目标文件是否为视频文件
                 if(isVedio(uploadPath+fileName)){
-                    cutImg(uploadPath,fileName);
-                    cutVedio(uploadPath,fileName);
-                    addLog(uploadPath,fileName);
+                    if(!fileName.endsWith(type)){
+                        int index = fileName.lastIndexOf(".");
+                        String prefix = fileName.substring(0, index);
+                        newfileName=prefix+"."+type;
+                    }
+                    final String tFileName=fileName;
+                    final String tNewfileName=newfileName;
+                    final File tDesfile=desfile;
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run(){
+
+                            //转换格式
+                            try {
+                                transformType(uploadPath,tFileName,type);
+                                //删除原格式文件
+                                cutVedio(transformTypePath,tNewfileName);
+                                cutImg(transformTypePath,tNewfileName);
+                                addLog(transformTypePath,tNewfileName);
+                                tDesfile.delete();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }).start();
+
                     return "上传成功";
                 }else{
                     desfile.delete();
@@ -94,6 +123,34 @@ public class controller {
         return false;
     }
 
+    /**
+     *   消费inputstream，并返回
+     */
+    public static String consumeInputStream(InputStream is) throws IOException{
+        BufferedReader br = new BufferedReader(new InputStreamReader(is));
+        String s ;
+        StringBuilder sb = new StringBuilder();
+        while((s=br.readLine())!=null){
+            System.out.println(s);
+            sb.append(s);
+        }
+        return sb.toString();
+    }
+
+    //格式转换
+    private void transformType(String filePath,String fileName,String type) throws IOException {
+        int index = fileName.lastIndexOf(".");
+        String prefix = fileName.substring(0, index);
+        String newfileName=prefix+"."+type;
+        transformTypeCmd=transformTypeCmd.replace("oldPath",filePath+fileName).replace("newPath",transformTypePath+newfileName);
+        Process process = Runtime.getRuntime().exec(transformTypeCmd);
+        dealStream(process);
+        try {
+            process.waitFor();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
     //截取图片,第2秒钟的图片
     private void cutImg(String filePath,String fileName) throws IOException {
         cutImgCmd=cutImgCmd.replace("oldPath",filePath+fileName);
@@ -101,17 +158,89 @@ public class controller {
         fileName = fileName.substring(0, index)+".jpg";
         cutImgCmd=cutImgCmd.replace("newPath",imgPath+fileName);
         Process process = Runtime.getRuntime().exec(cutImgCmd);
+        dealStream(process);
+        try {
+            process.waitFor();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     //截取视频，2秒
     private void cutVedio(String filePath,String fileName) throws IOException {
         cutVedioCmd=cutVedioCmd.replace("oldPath",filePath+fileName).replace("newPath",vedioPath+fileName);
         Process process = Runtime.getRuntime().exec(cutVedioCmd);
+        InputStream in = process.getInputStream();
+        dealStream(process);
+        try {
+            process.waitFor();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     //加log
     private void addLog(String filePath,String fileName) throws IOException {
         addLogCmd=addLogCmd.replace("oldPath",filePath+fileName).replace("picAddr",picAddr).replace("newPath",logPath+fileName);
         Process process = Runtime.getRuntime().exec(addLogCmd);
+        dealStream(process);
+        try {
+            process.waitFor();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 处理process输出流和错误流，防止进程阻塞
+     * 在process.waitFor();前调用
+     * @param process
+     */
+    private static void dealStream(Process process) {
+        if (process == null) {
+            return;
+        }
+        // 处理InputStream的线程
+        new Thread() {
+            @Override
+            public void run() {
+                BufferedReader in = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                String line = null;
+                try {
+                    while ((line = in.readLine()) != null) {
+                        //logger.info("output: " + line);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        in.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }.start();
+        // 处理ErrorStream的线程
+        new Thread() {
+            @Override
+            public void run() {
+                BufferedReader err = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                String line = null;
+                try {
+                    while ((line = err.readLine()) != null) {
+                        //logger.info("err: " + line);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        err.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }.start();
     }
 }
